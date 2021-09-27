@@ -1,0 +1,1 @@
+hook_files = files('hook.cpp', 'pe.cpp')
