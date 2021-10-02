@@ -42,13 +42,16 @@ class Webp : public Plugin {
         }
         return nullptr;
     }
+
   public:
     auto prepare_path(const wchar_t* path) -> std::optional<std::wstring> override {
-        const auto p = std::wstring_view(path);
-        if(!p.ends_with(L".webp")) {
+        const auto target = search_target(path);
+        if(target == nullptr) {
             return std::nullopt;
         }
-        return std::filesystem::path(path).replace_extension(L".png");
+
+        auto fake_path = std::filesystem::path(path).replace_extension(L".png");
+        return fake_path.wstring();
     }
     auto get_file_attributes(const wchar_t* const path) -> DWORD override {
         const auto target = search_target(path);
@@ -58,7 +61,7 @@ class Webp : public Plugin {
         auto flac_path = std::filesystem::path(path).replace_extension(L".webp");
         return GetFileAttributesW(flac_path.wstring().data());
     }
-    
+
     auto create_file(const wchar_t* const target_path, const wchar_t* const temp_path) -> HANDLE override {
         auto target = search_target(target_path);
         if(target == nullptr) {

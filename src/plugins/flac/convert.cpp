@@ -30,7 +30,7 @@ class Decoder : public FLAC::Decoder::File {
             append_buffer(uint32_t(total_size + 36));
             append_buffer("WAVEfmt ", 8);
             append_buffer(uint32_t(16));  // fmt chunk size
-            append_buffer(uint16_t(16));  // format = PCM
+            append_buffer(uint16_t(1));   // format = PCM
             append_buffer(uint16_t(channels));
             append_buffer(uint32_t(sample_rate));
             append_buffer(uint32_t(sample_rate * channels * (bps / 8))); // bytes-per-sec

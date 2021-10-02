@@ -32,14 +32,16 @@ class Flac : public Plugin {
         }
         return nullptr;
     }
-     
+
   public:
     auto prepare_path(const wchar_t* path) -> std::optional<std::wstring> override {
-        const auto p = std::wstring_view(path);
-        if(!p.ends_with(L".flac")) {
+        const auto target = search_target(path);
+        if(target == nullptr) {
             return std::nullopt;
         }
-        return std::filesystem::path(path).replace_extension(L".flac");
+
+        auto fake_path = std::filesystem::path(path).replace_extension(L".wav");
+        return fake_path.wstring();
     }
     auto get_file_attributes(const wchar_t* const path) -> DWORD override {
         const auto target = search_target(path);
