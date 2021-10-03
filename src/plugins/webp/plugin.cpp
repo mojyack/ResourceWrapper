@@ -14,22 +14,22 @@ inline auto close_valid_handle(const HANDLE handle) -> void {
 } // namespace
 
 namespace rw {
+enum class TargetType {
+    PNG,
+    BMP
+};
+struct Target {
+    TargetType     type;
+    const wchar_t* ext;
+    bool (*convert)(HANDLE, HANDLE);
+};
+const static auto TARGETS = std::array{
+    Target{TargetType::PNG, L".png", &plugin::webp::webp_to_png},
+    Target{TargetType::BMP, L".bmp", &plugin::webp::webp_to_bmp},
+};
 class Webp : public Plugin {
   private:
-    enum class TargetType {
-        PNG,
-        BMP
-    };
-    struct Target {
-        TargetType     type;
-        const wchar_t* ext;
-        bool (*convert)(HANDLE, HANDLE);
-    };
     auto search_target(const wchar_t* path) const -> const Target* {
-        const static auto TARGETS = std::array{
-            Target{TargetType::PNG, L".png", &plugin::webp::webp_to_png},
-            Target{TargetType::BMP, L".bmp", &plugin::webp::webp_to_bmp},
-        };
         const auto p = std::wstring_view(path);
         for(const auto& t : TARGETS) {
             if(p.ends_with(t.ext)) {
@@ -42,15 +42,22 @@ class Webp : public Plugin {
         }
         return nullptr;
     }
+    auto get_fake_path(const wchar_t* path) const -> const Target* {
+        const auto p = std::wstring_view(path);
+        if(!p.ends_with(L".webp")) {
+            return nullptr;
+        }
+        return &TARGETS[0];
+    }
 
   public:
     auto prepare_path(const wchar_t* path) -> std::optional<std::wstring> override {
-        const auto target = search_target(path);
+        const auto target = get_fake_path(path);
         if(target == nullptr) {
             return std::nullopt;
         }
 
-        auto fake_path = std::filesystem::path(path).replace_extension(L".png");
+        auto fake_path = std::filesystem::path(path).replace_extension(target->ext);
         return fake_path.wstring();
     }
     auto get_file_attributes(const wchar_t* const path) -> DWORD override {

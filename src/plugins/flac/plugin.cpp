@@ -6,20 +6,20 @@
 #include "convert.hpp"
 
 namespace rw {
+enum class TargetType {
+    WAV,
+};
+struct Target {
+    TargetType     type;
+    const wchar_t* ext;
+    bool (*convert)(const char*, HANDLE);
+};
+const static auto TARGETS = std::array{
+    Target{TargetType::WAV, L".wav", &plugin::flac::flac_to_wav},
+};
 class Flac : public Plugin {
   private:
-    enum class TargetType {
-        WAV,
-    };
-    struct Target {
-        TargetType     type;
-        const wchar_t* ext;
-        bool (*convert)(const char*, HANDLE);
-    };
     auto search_target(const wchar_t* path) const -> const Target* {
-        const static auto TARGETS = std::array{
-            Target{TargetType::WAV, L".wav", &plugin::flac::flac_to_wav},
-        };
         const auto p = std::wstring_view(path);
         for(const auto& t : TARGETS) {
             if(p.ends_with(t.ext)) {
@@ -32,15 +32,22 @@ class Flac : public Plugin {
         }
         return nullptr;
     }
+    auto get_fake_path(const wchar_t* path) const -> const Target* {
+        const auto p = std::wstring_view(path);
+        if(!p.ends_with(L".flac")) {
+            return nullptr;
+        }
+        return &TARGETS[0];
+    }
 
   public:
     auto prepare_path(const wchar_t* path) -> std::optional<std::wstring> override {
-        const auto target = search_target(path);
+        const auto target = get_fake_path(path);
         if(target == nullptr) {
             return std::nullopt;
         }
 
-        auto fake_path = std::filesystem::path(path).replace_extension(L".wav");
+        auto fake_path = std::filesystem::path(path).replace_extension(target->ext);
         return fake_path.wstring();
     }
     auto get_file_attributes(const wchar_t* const path) -> DWORD override {

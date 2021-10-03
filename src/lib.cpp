@@ -78,7 +78,7 @@ auto WINAPI mGetFileAttributesW(LPCWSTR lpFileName) -> DWORD {
     if(const auto r = GetFileAttributesW(lpFileName); r != -1) {
         return r;
     }
-    for(auto p : plugins) {
+    for (auto p : plugins) {
         if(const auto r = p->get_file_attributes(lpFileName); r != -1) {
             return r;
         }
@@ -99,7 +99,7 @@ auto prepare_find_result(const HANDLE handle, const wchar_t* file) -> std::optio
     if(p == find_files.end()) {
         return std::nullopt;
     }
-    const auto path = *p + "\\" + file;
+    const auto path = p->second + L"\\" + file;
     for(auto p : plugins) {
         if(const auto r = p->prepare_path(path.data()); r != std::nullopt) {
             return r;
@@ -114,15 +114,20 @@ auto WINAPI mFindFirstFileExW(LPCWSTR lpFileName, FINDEX_INFO_LEVELS fInfoLevelI
     }
     const auto path   = std::filesystem::path(lpFileName);
     const auto parent = path.parent_path();
-    if(path != parent_path) {
-        find_files.emplace(r, parent_path.wstring());
+    if(path == parent) {
+        return r;
     }
-    const auto sub = prepare_find_result(r, lpFindFileData->cFileName);
+    find_files.emplace(r, parent.wstring());
+    const auto sub = prepare_find_result(r, static_cast<WIN32_FIND_DATAW*>(lpFindFileData)->cFileName);
     if(sub.has_value()) {
-        ASSERT(sub->size() + 1 <= MAX_PATH)
-        std::memcpy(lpFindFileData->cFileName, sub->data(), (sub->size() + 1) * sizeof(wchar_t));
+        const auto filename = std::filesystem::path(*sub).filename().wstring();
+        ASSERT(filename.size() + 1 <= MAX_PATH, "filename too long")
+        std::memcpy(static_cast<WIN32_FIND_DATAW*>(lpFindFileData)->cFileName, filename.data(), (filename.size() + 1) * sizeof(wchar_t));
     }
     return r;
+}
+auto WINAPI mFindFirstFileW(LPCWSTR lpFileName, LPVOID lpFindFileData) -> HANDLE {
+    return mFindFirstFileExW(lpFileName, FindExInfoBasic, lpFindFileData, FindExSearchNameMatch, NULL, 0);
 }
 auto WINAPI mFindNextFileW(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData) -> BOOL {
     const auto r = FindNextFileW(hFindFile, lpFindFileData);
@@ -131,13 +136,14 @@ auto WINAPI mFindNextFileW(HANDLE hFindFile, LPWIN32_FIND_DATAW lpFindFileData) 
     }
     const auto sub = prepare_find_result(hFindFile, lpFindFileData->cFileName);
     if(sub.has_value()) {
-        ASSERT(sub->size() + 1 <= MAX_PATH)
-        std::memcpy(lpFindFileData->cFileName, sub->data(), (sub->size() + 1) * sizeof(wchar_t));
+        const auto filename = std::filesystem::path(*sub).filename().wstring();
+        ASSERT(filename.size() + 1 <= MAX_PATH, "filename too long")
+        std::memcpy(static_cast<WIN32_FIND_DATAW*>(lpFindFileData)->cFileName, filename.data(), (filename.size() + 1) * sizeof(wchar_t));
     }
     return r;
 }
-auto filedata_wtoa(const LPWIN32_FIND_DATAW& filedata) -> LPWIN32_FIND_DATAA {
-    auto r = LPWIN32_FIND_DATAA{
+auto filedata_wtoa(const WIN32_FIND_DATAW& filedata) -> WIN32_FIND_DATAA {
+    auto r = WIN32_FIND_DATAA{
         filedata.dwFileAttributes,
         filedata.ftCreationTime,
         filedata.ftLastAccessTime,
@@ -148,9 +154,11 @@ auto filedata_wtoa(const LPWIN32_FIND_DATAW& filedata) -> LPWIN32_FIND_DATAA {
         filedata.dwReserved1,
         NULL,
         NULL,
+#ifdef _MAC
         filedata.dwFileType,
         filedata.dwCreatorType,
         filedata.wFinderFlags,
+#endif
     };
     const auto namea = wtoa(filedata.cFileName);
     std::memcpy(r.cFileName, namea.data(), namea.size() + 1);
@@ -160,16 +168,19 @@ auto filedata_wtoa(const LPWIN32_FIND_DATAW& filedata) -> LPWIN32_FIND_DATAA {
 }
 auto WINAPI mFindFirstFileExA(LPCSTR lpFileName, FINDEX_INFO_LEVELS fInfoLevelId, LPVOID lpFindFileData, FINDEX_SEARCH_OPS fSearchOp, LPVOID lpSearchFilter, DWORD dwAdditionalFlags) -> HANDLE {
     const auto w        = atow(lpFileName);
-    auto       filedata = LPWIN32_FIND_DATAW();
+    auto       filedata = WIN32_FIND_DATAW();
     const auto r        = mFindFirstFileExW(w.data(), fInfoLevelId, &filedata, fSearchOp, lpSearchFilter, dwAdditionalFlags);
     if(r == INVALID_HANDLE_VALUE) {
         return r;
     }
-    *lpFindFileData = filedata_wtoa(filedata);
+    *static_cast<WIN32_FIND_DATAA*>(lpFindFileData) = filedata_wtoa(filedata);
     return r;
-} // namespace
+}
+auto WINAPI mFindFirstFileA(LPCSTR lpFileName, LPVOID lpFindFileData) -> HANDLE {
+    return mFindFirstFileExA(lpFileName, FindExInfoBasic, lpFindFileData, FindExSearchNameMatch, NULL, 0);
+}
 auto WINAPI mFindNextFileA(HANDLE hFindFile, LPWIN32_FIND_DATAA lpFindFileData) -> BOOL {
-    auto       filedata = LPWIN32_FIND_DATAW();
+    auto       filedata = WIN32_FIND_DATAW();
     const auto r        = mFindNextFileW(hFindFile, &filedata);
     if(r != TRUE) {
         return r;
@@ -195,8 +206,10 @@ extern "C" auto WINAPI DllMain(const HINSTANCE module_handle, const DWORD reason
             hook::Symbol{"Kernel32.dll", "CreateFileW", &rw::mCreateFileW},
             hook::Symbol{"Kernel32.dll", "GetFileAttributesA", &rw::mGetFileAttributesA},
             hook::Symbol{"Kernel32.dll", "GetFileAttributesW", &rw::mGetFileAttributesW},
-            hook::Symbol{"Kernel32.dll", "FindFirstFileExA", &rw::mFindNextFileA},
+            hook::Symbol{"Kernel32.dll", "FindFirstFileExA", &rw::mFindFirstFileExA},
+            hook::Symbol{"Kernel32.dll", "FindFirstFileA", &rw::mFindFirstFileA},
             hook::Symbol{"Kernel32.dll", "FindFirstFileExW", &rw::mFindFirstFileExW},
+            hook::Symbol{"Kernel32.dll", "FindFirstFileW", &rw::mFindFirstFileW},
             hook::Symbol{"Kernel32.dll", "FindNextFileA", &rw::mFindNextFileA},
             hook::Symbol{"Kernel32.dll", "FindNextFileW", &rw::mFindNextFileW},
             hook::Symbol{"Kernel32.dll", "FindClose", &rw::mFindClose},
