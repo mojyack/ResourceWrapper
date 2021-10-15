@@ -4,6 +4,8 @@
 #include "pe.hpp"
 
 namespace hook {
+auto inject(const HANDLE process) -> void;
+
 struct Symbol {
     const char* file;
     const char* func;
