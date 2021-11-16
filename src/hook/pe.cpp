@@ -33,7 +33,7 @@ auto PEFile::map_image(const wchar_t* const path) -> BYTE* {
     ASSERT(r != NULL, "error at VirtualAlloc()")
 
     memcpy(r, file.data(), nt_header->OptionalHeader.SizeOfHeaders);
-    for(int i = 0; i < nt_header->FileHeader.NumberOfSections; i++) {
+    for(auto i = 0; i < nt_header->FileHeader.NumberOfSections; i += 1) {
         const auto& s = section_table[i];
         if(s.PointerToRawData) {
             memcpy(&r[s.VirtualAddress], &file[s.PointerToRawData], s.SizeOfRawData);
@@ -75,7 +75,7 @@ auto PEFile::get_import_dir_entry() const -> const IMAGE_IMPORT_DESCRIPTOR* {
 auto PEFile::get_import_dll_names() const -> std::vector<const char*> {
     auto       r       = std::vector<const char*>();
     const auto imports = get_import_dir_entry();
-    for(int i = 0; imports[i].FirstThunk != 0; i += 1) {
+    for(auto i = 0; imports[i].FirstThunk != 0; i += 1) {
         r.emplace_back(get_data_pointer<const char*>(imports[i].Name));
     }
     return r;
@@ -90,14 +90,14 @@ auto PEFile::get_import_symbols(const char* dll_name) const -> std::vector<Impor
     if(!imports[0].OriginalFirstThunk && !is_need_free) {
         return r;
     }
-    for(int i = 0; imports[i].FirstThunk != 0; i += 1) {
+    for(auto i = 0; imports[i].FirstThunk != 0; i += 1) {
         const auto& d = imports[i];
         if(_stricmp(dll_name, get_data_pointer<const char*>(d.Name)) != 0) {
             continue;
         }
         const auto iat_pointer = get_data_pointer<IMAGE_THUNK_DATA*>(d.FirstThunk);
         const auto int_pointer = d.OriginalFirstThunk ? get_data_pointer<IMAGE_THUNK_DATA*>(d.OriginalFirstThunk) : iat_pointer;
-        for(size_t i = 0;; i += 1) {
+        for(auto i = size_t(0);; i += 1) {
             const auto address = (reinterpret_cast<size_t*>(int_pointer))[i];
             if(address == 0) {
                 break;
@@ -122,12 +122,12 @@ auto PEFile::hook_import_symbol(const void* const original, const void* const in
     auto       r       = (void**)(nullptr);
     const auto imports = get_import_dir_entry();
     if(imports == nullptr) {
-        return nullptr;   
+        return nullptr;
     }
-    for(int i = 0; imports[i].FirstThunk != 0; i += 1) {
+    for(auto i = 0; imports[i].FirstThunk != 0; i += 1) {
         const auto& d   = imports[i];
         const auto  iat = get_data_pointer<void**>(d.FirstThunk);
-        for(int i = 0; iat[i] != 0; i += 1) {
+        for(auto i = 0; iat[i] != 0; i += 1) {
             if(iat[i] == reinterpret_cast<FARPROC>(original)) {
                 auto protect = DWORD(0);
                 VirtualProtect(&iat[i], sizeof(FARPROC), PAGE_READWRITE, &protect);
@@ -142,24 +142,24 @@ auto PEFile::hook_import_symbol(const void* const original, const void* const in
 auto PEFile::hook_export_symbol(const char* const func, const void* const inject) -> void* {
     auto       r       = (void*)(nullptr);
     const auto exports = get_export_dir_entry();
-    if (exports == nullptr) {
+    if(exports == nullptr) {
         return nullptr;
     }
-    const auto name_offset_array = get_data_pointer<DWORD*>(exports->AddressOfNames);
-    const auto ordinal_array = get_data_pointer<WORD*>(exports->AddressOfNameOrdinals);
+    const auto name_offset_array     = get_data_pointer<DWORD*>(exports->AddressOfNames);
+    const auto ordinal_array         = get_data_pointer<WORD*>(exports->AddressOfNameOrdinals);
     const auto function_offset_array = get_data_pointer<DWORD*>(exports->AddressOfFunctions);
-    for (auto i = DWORD(0); i < exports->NumberOfFunctions; i += 1) {
+    for(auto i = DWORD(0); i < exports->NumberOfFunctions; i += 1) {
         const auto name = get_data_pointer<const char*>(name_offset_array[i]);
         if(_stricmp(func, name) != 0) {
             continue;
         }
-        const auto current_ordinal = ordinal_array[i];
+        const auto current_ordinal         = ordinal_array[i];
         const auto current_function_offset = function_offset_array + current_ordinal;
-        const auto hook_offset = static_cast<const BYTE*>(inject) - load_base;
+        const auto hook_offset             = static_cast<const BYTE*>(inject) - load_base;
 
         auto protect = DWORD(0);
         VirtualProtect(current_function_offset, sizeof(DWORD), PAGE_READWRITE, &protect);
-        r = load_base + *current_function_offset;
+        r                        = load_base + *current_function_offset;
         *current_function_offset = hook_offset;
         VirtualProtect(current_function_offset, sizeof(DWORD), protect, &protect);
         break;
@@ -181,7 +181,7 @@ PEFile::PEFile(const HMODULE module_handle) : is_need_free(false) {
 
     section_table = reinterpret_cast<IMAGE_SECTION_HEADER*>(nt_headers + 1);
     load_base     = reinterpret_cast<BYTE*>(module_handle);
-    
+
     if(nt_headers->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA) {
         warn("high ASLR enabled");
     }
@@ -195,4 +195,4 @@ PEFile::~PEFile() {
         VirtualFree(load_base, 0, MEM_RELEASE);
     }
 }
-} // namespace wrapper
+} // namespace hook

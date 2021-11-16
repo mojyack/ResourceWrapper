@@ -9,13 +9,13 @@
 namespace rw {
 extern std::vector<Plugin*> plugins;
 namespace {
-auto atow(const char* str) -> std::wstring {
+auto atow(const char* const str) -> std::wstring {
     const auto len = strlen(str) + 1;
     auto       buf = std::vector<wchar_t>(len);
     mbstowcs(buf.data(), str, len);
     return buf.data();
 }
-auto wtoa(const wchar_t* str) -> std::string {
+auto wtoa(const wchar_t* const str) -> std::string {
     const auto len = (wcslen(str) + 1) * sizeof(wchar_t);
     auto       buf = std::vector<char>(len);
     wcstombs(buf.data(), str, len);
@@ -61,7 +61,7 @@ auto WINAPI mCreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShar
 
     static auto id  = size_t(0);
     auto        tmp = temporary_path + L"\\" + std::to_wstring(id);
-    for(auto p : plugins) {
+    for(const auto p : plugins) {
         if(const auto r = p->create_file(path.data(), tmp.data()); r != INVALID_HANDLE_VALUE) {
             id += 1;
             cache.emplace(path, tmp);
@@ -78,7 +78,7 @@ auto WINAPI mGetFileAttributesW(LPCWSTR lpFileName) -> DWORD {
     if(const auto r = GetFileAttributesW(lpFileName); r != -1) {
         return r;
     }
-    for (auto p : plugins) {
+    for (const auto p : plugins) {
         if(const auto r = p->get_file_attributes(lpFileName); r != -1) {
             return r;
         }
@@ -100,7 +100,7 @@ auto prepare_find_result(const HANDLE handle, const wchar_t* file) -> std::optio
         return std::nullopt;
     }
     const auto path = p->second + L"\\" + file;
-    for(auto p : plugins) {
+    for(const auto p : plugins) {
         if(const auto r = p->prepare_path(path.data()); r != std::nullopt) {
             return r;
         }

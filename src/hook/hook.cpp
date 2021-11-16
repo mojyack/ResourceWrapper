@@ -10,9 +10,9 @@
 
 namespace hook {
 namespace {
-auto WINAPI mLoadLibraryA(const char* const i_dll_name) -> HMODULE;
-auto WINAPI mLoadLibraryW(const wchar_t* const i_dll_name) -> HMODULE;
-auto WINAPI mLoadLibraryExA(const char* const i_dll_name, const HANDLE i_reserved, const DWORD i_flags) -> HINSTANCE;
+auto WINAPI mLoadLibraryA(const char* i_dll_name) -> HMODULE;
+auto WINAPI mLoadLibraryW(const wchar_t* i_dll_name) -> HMODULE;
+auto WINAPI mLoadLibraryExA(const char* i_dll_name, HANDLE i_reserved, DWORD i_flags) -> HINSTANCE;
 auto WINAPI mLoadLibraryExW(const wchar_t* i_dll_name, HANDLE i_reserved, DWORD i_flags) -> HINSTANCE;
 auto WINAPI mGetProcAddress(HMODULE i_module_handle, const char* i_func_name) -> FARPROC;
 auto WINAPI mCreateProcessA(LPCSTR lpApplicationName, LPSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCSTR lpCurrentDirectory, LPSTARTUPINFOA lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation) -> BOOL;
@@ -49,14 +49,14 @@ auto WINAPI mLoadLibraryExA(const char* const i_dll_name, const HANDLE i_reserve
     }
     return module_handle;
 }
-auto WINAPI mLoadLibraryExW(const wchar_t* i_dll_name, HANDLE i_reserved, DWORD i_flags) -> HINSTANCE {
+auto WINAPI mLoadLibraryExW(const wchar_t* const i_dll_name, const HANDLE i_reserved, const DWORD i_flags) -> HINSTANCE {
     const auto module_handle = LoadLibraryExW(i_dll_name, i_reserved, i_flags);
     if(module_handle && (i_flags & LOAD_LIBRARY_AS_DATAFILE) == 0) {
         hook_imports(PEFile(module_handle), true);
     }
     return module_handle;
 }
-auto WINAPI mGetProcAddress(HMODULE i_module_handle, const char* i_func_name) -> FARPROC {
+auto WINAPI mGetProcAddress(const HMODULE i_module_handle, const char* const i_func_name) -> FARPROC {
     const auto r = GetProcAddress(i_module_handle, i_func_name);
     for(const auto& t : targets) {
         if(t.original == r) {
@@ -65,7 +65,7 @@ auto WINAPI mGetProcAddress(HMODULE i_module_handle, const char* i_func_name) ->
     }
     return r;
 }
-auto WINAPI mCreateProcessA(LPCSTR lpApplicationName, LPSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCSTR lpCurrentDirectory, LPSTARTUPINFOA lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation) -> BOOL {
+auto WINAPI mCreateProcessA(const LPCSTR lpApplicationName, const LPSTR lpCommandLine, const LPSECURITY_ATTRIBUTES lpProcessAttributes, const LPSECURITY_ATTRIBUTES lpThreadAttributes, const BOOL bInheritHandles, const DWORD dwCreationFlags, const LPVOID lpEnvironment, const LPCSTR lpCurrentDirectory, const LPSTARTUPINFOA lpStartupInfo, const LPPROCESS_INFORMATION lpProcessInformation) -> BOOL {
     const auto resume = !bool(dwCreationFlags & CREATE_SUSPENDED);
     const auto f      = dwCreationFlags | CREATE_SUSPENDED;
     const auto r      = CreateProcessA(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, f, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
@@ -77,7 +77,7 @@ auto WINAPI mCreateProcessA(LPCSTR lpApplicationName, LPSTR lpCommandLine, LPSEC
     }
     return r;
 }
-auto WINAPI mCreateProcessW(LPCWSTR lpApplicationName, LPWSTR lpCommandLine, LPSECURITY_ATTRIBUTES lpProcessAttributes, LPSECURITY_ATTRIBUTES lpThreadAttributes, BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation) -> BOOL {
+auto WINAPI mCreateProcessW(const LPCWSTR lpApplicationName, const LPWSTR lpCommandLine, const LPSECURITY_ATTRIBUTES lpProcessAttributes, const LPSECURITY_ATTRIBUTES lpThreadAttributes, const BOOL bInheritHandles, const DWORD dwCreationFlags, const LPVOID lpEnvironment, const LPCWSTR lpCurrentDirectory, const LPSTARTUPINFOW lpStartupInfo, const LPPROCESS_INFORMATION lpProcessInformation) -> BOOL {
     const auto resume = !bool(dwCreationFlags & CREATE_SUSPENDED);
     const auto f      = dwCreationFlags | CREATE_SUSPENDED;
     const auto r      = CreateProcessW(lpApplicationName, lpCommandLine, lpProcessAttributes, lpThreadAttributes, bInheritHandles, f, lpEnvironment, lpCurrentDirectory, lpStartupInfo, lpProcessInformation);
@@ -94,7 +94,7 @@ auto init_symbol_original(Symbol& s) -> void {
     ASSERT(a != 0, "module not found");
     s.original = GetProcAddress(a, s.func);
 }
-auto find_original_function(auto f) -> decltype(f) {
+auto find_original_function(const auto f) -> decltype(f) {
     for(const auto& t : targets) {
         if(t.inject == f && t.original != nullptr) {
             return (decltype(f))t.original;
@@ -116,7 +116,7 @@ auto inject(const HANDLE process) -> void {
 
     auto written = SIZE_T(0);
     ASSERT(WriteProcessMemory(process, remote_mem, self_path.data(), size_bytes, &written) != FALSE, "error at WriteProcessMemory()")
-    
+
     const auto loadlibrary_pointer = find_original_function(LoadLibraryW);
 
     auto       thread_id     = DWORD(0);
@@ -139,15 +139,9 @@ auto init(const Symbol symbols[], size_t size) -> void {
         init_symbol_original(t);
     }
 }
-auto hook_imports(PEFile pe, const bool hook, const bool is_self) -> bool {
+auto hook_imports(PEFile pe, const bool hook) -> bool {
     for(const auto& t : targets) {
-        if(!is_self) {
-            pe.hook_import_symbol(hook ? t.original : t.inject, hook ? t.inject : t.original);
-        } else if(t.slave != nullptr) {
-            const auto o = GetProcAddress(GetModuleHandleA(t.slave), t.func);
-            const auto i = GetProcAddress(GetModuleHandleA(t.file), t.func);
-            pe.hook_import_symbol(hook ? o : i, hook ? i : o);
-        }
+        pe.hook_import_symbol(hook ? t.original : t.inject, hook ? t.inject : t.original);
     }
     return true;
 }
@@ -156,7 +150,10 @@ auto hook_all_imports(const HMODULE self, const bool hook) -> bool {
     auto module_entry = MODULEENTRY32W{sizeof(MODULEENTRY32W), 0};
     snapshot          = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     for(auto is_next = Module32FirstW(snapshot, &module_entry); is_next; is_next = Module32NextW(snapshot, &module_entry)) {
-        hook_imports(PEFile(module_entry.hModule), hook, module_entry.hModule == self);
+        if(module_entry.hModule == self) {
+            continue;
+        }
+        hook_imports(PEFile(module_entry.hModule), hook);
     }
     if(snapshot != INVALID_HANDLE_VALUE) {
         CloseHandle(snapshot);
