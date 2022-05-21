@@ -78,7 +78,7 @@ auto WINAPI mGetFileAttributesW(LPCWSTR lpFileName) -> DWORD {
     if(const auto r = GetFileAttributesW(lpFileName); r != -1) {
         return r;
     }
-    for (const auto p : plugins) {
+    for(const auto p : plugins) {
         if(const auto r = p->get_file_attributes(lpFileName); r != -1) {
             return r;
         }
@@ -220,7 +220,7 @@ extern "C" auto WINAPI DllMain(const HINSTANCE module_handle, const DWORD reason
         hook::init(targets.data(), targets.size());
         hook::hook_all_imports(module_handle, true);
         hook::hook_all_exports();
-        setlocale(LC_ALL, "");
+        setlocale(LC_ALL, ".UTF8");
         break;
     }
     case DLL_PROCESS_DETACH:
