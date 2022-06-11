@@ -12,7 +12,7 @@ enum class TargetType {
 struct Target {
     TargetType     type;
     const wchar_t* ext;
-    bool (*convert)(const char*, HANDLE);
+    bool (*convert)(const wchar_t*, HANDLE);
 };
 const static auto TARGETS = std::array{
     Target{TargetType::WAV, L".wav", &plugin::flac::flac_to_wav},
@@ -70,7 +70,7 @@ class Flac : public Plugin {
         if(temp_handle == INVALID_HANDLE_VALUE) {
             goto end;
         }
-        if(!target->convert(flac_path.string().data(), temp_handle)) {
+        if(!target->convert(flac_path.wstring().data(), temp_handle)) {
             goto end;
         }
         r = temp_handle;

@@ -1,6 +1,8 @@
 #include <vector>
 
 #include <FLAC++/decoder.h>
+#include <fcntl.h>
+#include <io.h>
 
 #include "convert.hpp"
 
@@ -29,8 +31,8 @@ class Decoder : public FLAC::Decoder::File {
             append_buffer("RIFF", 4);
             append_buffer(uint32_t(total_size + 36));
             append_buffer("WAVEfmt ", 8);
-            append_buffer(uint32_t(16));  // fmt chunk size
-            append_buffer(uint16_t(1));   // format = PCM
+            append_buffer(uint32_t(16)); // fmt chunk size
+            append_buffer(uint16_t(1));  // format = PCM
             append_buffer(uint16_t(channels));
             append_buffer(uint32_t(sample_rate));
             append_buffer(uint32_t(sample_rate * channels * (bps / 8))); // bytes-per-sec
@@ -70,14 +72,18 @@ class Decoder : public FLAC::Decoder::File {
     Decoder() {}
 };
 
-auto flac_to_wav(const char* const flac_path, const HANDLE wav_handle) -> bool {
-    auto decoder = Decoder();
-    if(decoder.init(flac_path) != FLAC__STREAM_DECODER_INIT_STATUS_OK) {
+auto flac_to_wav(const wchar_t* const flac_path, const HANDLE wav_handle) -> bool {
+    const auto handle   = CreateFileW(flac_path, GENERIC_READ, 0, 0, OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, 0);
+    const auto oshandle = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY);
+    const auto file     = _fdopen(oshandle, "rb");
+    auto       decoder  = Decoder();
+    if(decoder.init(file) != FLAC__STREAM_DECODER_INIT_STATUS_OK) {
         return false;
     }
-    const auto r = decoder.process_until_end_of_stream();
+    const auto  r       = decoder.process_until_end_of_stream();
     const auto& decoded = decoder.get_decoded();
     WriteFile(wav_handle, decoded.data(), decoded.size(), NULL, NULL);
+    CloseHandle(handle);
     if(SetFilePointer(wav_handle, 0, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
         return false;
     }
